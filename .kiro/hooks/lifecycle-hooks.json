@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "trigger": "pre-commit",
+      "command": "cargo test --test pbt_orderflow_test"
+    },
+    {
+      "trigger": "post-generation",
+      "command": "cargo check"
+    }
+  ]
+}
+

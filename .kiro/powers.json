@@ -1,0 +1,13 @@
+{
+  "activePowers": [
+    {
+      "name": "rust-analyzer-power",
+      "description": "Deep AST semantic analysis and borrow-checker inspection for Rust"
+    },
+    {
+      "name": "financial-charting-power",
+      "description": "TradingView visual component generator and timescale synchronizer"
+    }
+  ]
+}
+

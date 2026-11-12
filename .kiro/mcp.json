@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "crypto-market-data": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "description": "MCP data bridge for querying external crypto exchange metrics and validating orderbook depth"
+    }
+  }
+}
+

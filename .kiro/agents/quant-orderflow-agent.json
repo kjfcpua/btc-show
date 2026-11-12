@@ -1,0 +1,11 @@
+{
+  "name": "quant-orderflow-agent",
+  "description": "Specialized agent for cryptocurrency order flow modeling, footprint aggregation, and financial chart synchronization",
+  "capabilities": [
+    "rust-axum-service-generation",
+    "footprint-ladder-math",
+    "tradingview-lightweight-charts-integration",
+    "pbt-property-verification"
+  ]
+}
+
