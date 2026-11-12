@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BTC/USDT 订单流与足迹图专业交易终端</title>
+  <!-- 本地加载 TradingView Lightweight Charts，若失败自动 fallback 到 CDN -->
+  <script src="/static/lightweight-charts.standalone.production.js"></script>
+  <script>
+    if (typeof LightweightCharts === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"><\/script>');
+    }
+  </script>
+  <style>
+    :root {
+      --bg-primary: #131722;
+      --bg-secondary: #1e222d;
+      --bg-card: #2a2e39;
+      --border-color: #363c4e;
+      --text-primary: #d1d4dc;
+      --text-secondary: #787b86;
+      --text-highlight: #ffffff;
+      --bull-green: #089981;
+      --bull-green-bg: rgba(8, 153, 129, 0.2);
+      --bear-red: #f23645;
+      --bear-red-bg: rgba(242, 54, 69, 0.2);
+      --poc-gold: #f7a600;
+      --poc-gold-bg: rgba(247, 166, 0, 0.25);
+      --accent-blue: #2962ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部导航与数据状态栏 */
+    header {
+      height: 52px;
+      background-color: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .symbol-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text-highlight);
+    }
+
+    .symbol-tag {
+      background-color: var(--accent-blue);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--bull-green);
+      box-shadow: 0 0 6px var(--bull-green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; filter: brightness(1.2); }
+      100% { opacity: 0.6; }
+    }
+
+    .header-stats {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 13px;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 1px;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+    }
+
+    .text-green { color: var(--bull-green); }
+    .text-red { color: var(--bear-red); }
+    .text-gold { color: var(--poc-gold); }
+    .text-blue { color: var(--accent-blue); }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-badge {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+
+    .btn-badge:hover, .btn-badge.active {
+      background-color: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+
+    /* 主布局区域 */
+    .app-main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 左侧/中间：TradingView 多图表容器 */
+    .chart-container-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+      border-right: 1px solid var(--border-color);
+    }
+
+    .chart-pane {
+      width: 100%;
+      position: relative;
+    }
+
+    .pane-header {
+      position: absolute;
+      top: 6px;
+      left: 12px;
+      z-index: 10;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: rgba(19, 23, 34, 0.75);
+      padding: 2px 8px;
+      border-radius: 3px;
+      backdrop-filter: blur(4px);
+      pointer-events: none;
+      display: flex;
+      gap: 12px;
+    }
+
+    #main-chart-pane {
+      flex: 0 0 52%;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #volume-chart-pane {
+      flex: 0 0 16%;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #buysell-chart-pane {
+      flex: 0 0 18%;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    #delta-chart-pane {
+      flex: 0 0 14%;
+    }
+
+    /* 右侧：Footprint 足迹图阶梯详细面板 (Order Flow Ladder) */
+    .footprint-panel {
+      width: 380px;
+      background-color: var(--bg-secondary);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .fp-panel-title {
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-highlight);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .fp-info-bar {
+      padding: 8px 14px;
+      font-size: 12px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .fp-info-bar .stat-item {
+      font-size: 11px;
+    }
+
+    .ladder-header {
+      display: grid;
+      grid-template-columns: 1fr 90px 1fr 60px;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      text-align: center;
+      background: rgba(0, 0, 0, 0.2);
+    }
+
+    .ladder-list {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .ladder-row {
+      display: grid;
+      grid-template-columns: 1fr 90px 1fr 60px;
+      align-items: center;
+      padding: 4px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      position: relative;
+    }
+
+    .ladder-row.is-poc {
+      background: var(--poc-gold-bg);
+      border-left: 3px solid var(--poc-gold);
+    }
+
+    .ladder-bid {
+      text-align: right;
+      padding-right: 8px;
+      color: var(--bear-red);
+      position: relative;
+      font-weight: 500;
+    }
+
+    .ladder-ask {
+      text-align: left;
+      padding-left: 8px;
+      color: var(--bull-green);
+      position: relative;
+      font-weight: 500;
+    }
+
+    .ladder-price {
+      text-align: center;
+      color: var(--text-highlight);
+      font-weight: 600;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 3px;
+      padding: 1px 0;
+    }
+
+    .ladder-price.poc-star {
+      color: var(--poc-gold);
+    }
+
+    .ladder-delta {
+      text-align: right;
+      font-size: 11px;
+    }
+
+    .imbalance-high {
+      font-weight: 800;
+      text-shadow: 0 0 6px currentColor;
+    }
+
+    /* 悬停提示浮层 */
+    .bar-details-floating {
+      position: absolute;
+      top: 8px;
+      left: 100px;
+      z-index: 20;
+      background: rgba(19, 23, 34, 0.88);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-family: "SF Mono", Monaco, Consolas, monospace;
+      display: flex;
+      gap: 12px;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-primary);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #363c4e;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部导航栏 -->
+  <header>
+    <div class="header-left">
+      <div class="symbol-badge">
+        <span>BTCUSDT</span>
+        <span class="symbol-tag">永续订单流</span>
+        <div class="status-indicator">
+          <div class="status-dot" id="ws-dot"></div>
+          <span id="ws-status">实时数据中</span>
+        </div>
+      </div>
+
+      <div class="header-stats">
+        <div class="stat-item">
+          <span class="stat-label">最新价 (Last)</span>
+          <span class="stat-value text-green" id="header-price">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">最新 K 线成交量 (Vol)</span>
+          <span class="stat-value" id="header-vol">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">买量 (Buy Vol)</span>
+          <span class="stat-value text-green" id="header-buy-vol">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">卖量 (Sell Vol)</span>
+          <span class="stat-value text-red" id="header-sell-vol">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">Bar Delta (买卖差)</span>
+          <span class="stat-value" id="header-delta">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">POC 价格 (控制点)</span>
+          <span class="stat-value text-gold" id="header-poc">--</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-controls">
+      <div class="btn-badge active" id="btn-period">1分钟 (1m)</div>
+      <div class="btn-badge" id="btn-scroll">自适应视口</div>
+    </div>
+  </header>
+
+  <!-- 主体工作区 -->
+  <div class="app-main">
+    <!-- 左侧：多层 TradingView 图表面板 -->
+    <div class="chart-container-wrapper">
+      
+      <!-- 浮动 K 线详情指标 -->
+      <div class="bar-details-floating" id="floating-bar-info">
+        <span>O: <b id="bar-o">--</b></span>
+        <span>H: <b id="bar-h">--</b></span>
+        <span>L: <b id="bar-l">--</b></span>
+        <span>C: <b id="bar-c">--</b></span>
+        <span>Vol: <b id="bar-v">--</b></span>
+        <span>Buy: <b id="bar-bv" class="text-green">--</b></span>
+        <span>Sell: <b id="bar-sv" class="text-red">--</b></span>
+        <span>Delta: <b id="bar-d">--</b></span>
+      </div>
+
+      <!-- 面板 1：BTC 主 K 线 (Candlestick) -->
+      <div class="chart-pane" id="main-chart-pane">
+        <div class="pane-header">
+          <span>BTC/USDT 蜡烛图</span>
+          <span style="color:var(--poc-gold)">● POC 线</span>
+        </div>
+      </div>
+
+      <!-- 面板 2：总成交量 (Volume + MA) -->
+      <div class="chart-pane" id="volume-chart-pane">
+        <div class="pane-header">
+          <span>总成交量 (Volume)</span>
+          <span style="color:#2962ff">― Volume MA(20)</span>
+        </div>
+      </div>
+
+      <!-- 面板 3：买量 (Buy Volume) vs 卖量 (Sell Volume) 分流对比 -->
+      <div class="chart-pane" id="buysell-chart-pane">
+        <div class="pane-header">
+          <span>买量 / 卖量对比 (Taker Buy vs Sell Volume)</span>
+          <span style="color:var(--bull-green)">■ 买量 (Ask Hit)</span>
+          <span style="color:var(--bear-red)">■ 卖量 (Bid Hit)</span>
+        </div>
+      </div>
+
+      <!-- 面板 4：净 Delta 与 CVD 累计差 -->
+      <div class="chart-pane" id="delta-chart-pane">
+        <div class="pane-header">
+          <span>净买卖差 (Bar Delta) 与 CVD 累计</span>
+          <span style="color:#e040fb">― CVD 趋势</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：足迹图阶梯检查器 (Footprint Ladder Inspector) -->
+    <div class="footprint-panel">
+      <div class="fp-panel-title">
+        <span>👣 足迹图档位阶梯 (Footprint Ladder)</span>
+        <span style="font-size:11px; font-weight:normal; color:var(--text-secondary)" id="fp-time-title">最新 K 线</span>
+      </div>
+
+      <div class="fp-info-bar">
+        <div class="stat-item">
+          <span class="stat-label">总买入量 (Ask)</span>
+          <span class="stat-value text-green" id="fp-tot-buy">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">总卖出量 (Bid)</span>
+          <span class="stat-value text-red" id="fp-tot-sell">--</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">净 Delta (差额)</span>
+          <span class="stat-value" id="fp-tot-delta">--</span>
+        </div>
+      </div>
+
+      <div class="ladder-header">
+        <span>卖方主动 (Bid)</span>
+        <span>价格 (Price)</span>
+        <span>买方主动 (Ask)</span>
+        <span>档位Delta</span>
+      </div>
+
+      <div class="ladder-list" id="ladder-container">
+        <!-- 动态渲染每个价格档位的足迹数据 -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 全局数据仓库
+    let barsData = [];
+    let barMap = new Map(); // time -> FootprintBar
+    let activeBarTime = null;
+
+    // 格式化函数
+    const fmtPrice = (p) => Number(p).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const fmtVol = (v) => Number(v).toFixed(2);
+    const fmtDelta = (d) => (d > 0 ? `+${Number(d).toFixed(2)}` : Number(d).toFixed(2));
+
+    // 图表通用深色配置
+    const commonChartOptions = {
+      layout: {
+        background: { color: '#131722' },
+        textColor: '#787b86',
+        fontSize: 11,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      },
+      grid: {
+        vertLines: { color: 'rgba(42, 46, 57, 0.4)' },
+        horzLines: { color: 'rgba(42, 46, 57, 0.4)' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+      },
+      timeScale: {
+        borderColor: '#363c4e',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    };
+
+    // 1. 初始化主 K 线图
+    const mainChartEl = document.getElementById('main-chart-pane');
+    const mainChart = LightweightCharts.createChart(mainChartEl, {
+      ...commonChartOptions,
+      priceScale: { borderColor: '#363c4e' },
+    });
+
+    const candleSeries = mainChart.addCandlestickSeries({
+      upColor: '#089981',
+      downColor: '#f23645',
+      borderVisible: false,
+      wickUpColor: '#089981',
+      wickDownColor: '#f23645',
+    });
+
+    // POC 曲线 (控制点走势)
+    const pocLineSeries = mainChart.addLineSeries({
+      color: '#f7a600',
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      title: 'POC',
+    });
+
+    // 2. 初始化总成交量图
+    const volChartEl = document.getElementById('volume-chart-pane');
+    const volChart = LightweightCharts.createChart(volChartEl, {
+      ...commonChartOptions,
+      priceScale: { borderColor: '#363c4e' },
+    });
+
+    const volSeries = volChart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    const volMaSeries = volChart.addLineSeries({
+      color: '#2962ff',
+      lineWidth: 1.5,
+      priceScaleId: '',
+    });
+
+    // 3. 初始化买量 vs 卖量图 (Buy Volume vs Sell Volume)
+    const buySellChartEl = document.getElementById('buysell-chart-pane');
+    const buySellChart = LightweightCharts.createChart(buySellChartEl, {
+      ...commonChartOptions,
+      priceScale: { borderColor: '#363c4e' },
+    });
+
+    // 买量柱状图 (绿色向上)
+    const buyVolSeries = buySellChart.addHistogramSeries({
+      color: '#089981',
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    // 卖量柱状图 (红色向上对齐对比)
+    const sellVolSeries = buySellChart.addHistogramSeries({
+      color: '#f23645',
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    // 4. 初始化 Delta 图 (买卖差 + CVD 曲线)
+    const deltaChartEl = document.getElementById('delta-chart-pane');
+    const deltaChart = LightweightCharts.createChart(deltaChartEl, {
+      ...commonChartOptions,
+      priceScale: { borderColor: '#363c4e' },
+    });
+
+    const deltaHistogram = deltaChart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+    });
+
+    const cvdLineSeries = deltaChart.addLineSeries({
+      color: '#e040fb',
+      lineWidth: 2,
+      priceScaleId: '',
+    });
+
+    // 自适应调整尺寸
+    function resizeCharts() {
+      mainChart.resize(mainChartEl.clientWidth, mainChartEl.clientHeight);
+      volChart.resize(volChartEl.clientWidth, volChartEl.clientHeight);
+      buySellChart.resize(buySellChartEl.clientWidth, buySellChartEl.clientHeight);
+      deltaChart.resize(deltaChartEl.clientWidth, deltaChartEl.clientHeight);
+    }
+    window.addEventListener('resize', resizeCharts);
+
+    // 联动 4 个图表的时间轴 (TimeScale Sync)
+    const charts = [mainChart, volChart, buySellChart, deltaChart];
+    let isSyncing = false;
+
+    charts.forEach((chart, idx) => {
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (isSyncing || !range) return;
+        isSyncing = true;
+        charts.forEach((otherChart, oIdx) => {
+          if (idx !== oIdx) {
+            otherChart.timeScale().setVisibleLogicalRange(range);
+          }
+        });
+        isSyncing = false;
+      });
+    });
+
+    // 十字光标联动 & 鼠标悬停更新
+    charts.forEach((chart) => {
+      chart.subscribeCrosshairMove((param) => {
+        if (!param.time) return;
+        const bar = barMap.get(param.time);
+        if (bar) {
+          updateFloatingInfo(bar);
+          renderFootprintLadder(bar, false);
+        }
+      });
+    });
+
+    // 恢复显示最新 Bar
+    mainChartEl.addEventListener('mouseleave', () => {
+      if (barsData.length > 0) {
+        const lastBar = barsData[barsData.length - 1];
+        updateFloatingInfo(lastBar);
+        renderFootprintLadder(lastBar, true);
+      }
+    });
+
+    // 更新浮动信息
+    function updateFloatingInfo(bar) {
+      document.getElementById('bar-o').textContent = fmtPrice(bar.open);
+      document.getElementById('bar-h').textContent = fmtPrice(bar.high);
+      document.getElementById('bar-l').textContent = fmtPrice(bar.low);
+      document.getElementById('bar-c').textContent = fmtPrice(bar.close);
+      document.getElementById('bar-v').textContent = fmtVol(bar.volume);
+      document.getElementById('bar-bv').textContent = fmtVol(bar.buy_volume);
+      document.getElementById('bar-sv').textContent = fmtVol(bar.sell_volume);
+      
+      const deltaEl = document.getElementById('bar-d');
+      deltaEl.textContent = fmtDelta(bar.delta);
+      deltaEl.className = bar.delta >= 0 ? 'text-green' : 'text-red';
+    }
+
+    // 更新顶部 Header 统计信息
+    function updateHeaderStats(bar) {
+      document.getElementById('header-price').textContent = '$' + fmtPrice(bar.close);
+      document.getElementById('header-vol').textContent = fmtVol(bar.volume) + ' BTC';
+      document.getElementById('header-buy-vol').textContent = fmtVol(bar.buy_volume);
+      document.getElementById('header-sell-vol').textContent = fmtVol(bar.sell_volume);
+      
+      const deltaEl = document.getElementById('header-delta');
+      deltaEl.textContent = fmtDelta(bar.delta);
+      deltaEl.className = 'stat-value ' + (bar.delta >= 0 ? 'text-green' : 'text-red');
+      
+      document.getElementById('header-poc').textContent = '$' + fmtPrice(bar.poc_price);
+    }
+
+    // 渲染右侧足迹图阶梯 (Footprint Ladder)
+    function renderFootprintLadder(bar, isLatest = false) {
+      const container = document.getElementById('ladder-container');
+      const timeTitle = document.getElementById('fp-time-title');
+      
+      const date = new Date(bar.time * 1000);
+      const timeStr = date.toTimeString().split(' ')[0];
+      timeTitle.textContent = isLatest ? `当前 K 线 (${timeStr})` : `历史 K 线 (${timeStr})`;
+
+      document.getElementById('fp-tot-buy').textContent = fmtVol(bar.buy_volume) + ' BTC';
+      document.getElementById('fp-tot-sell').textContent = fmtVol(bar.sell_volume) + ' BTC';
+      
+      const deltaEl = document.getElementById('fp-tot-delta');
+      deltaEl.textContent = fmtDelta(bar.delta);
+      deltaEl.className = 'stat-value ' + (bar.delta >= 0 ? 'text-green' : 'text-red');
+
+      // 从高价到低价排列 levels
+      const sortedLevels = [...bar.levels].sort((a, b) => b.price - a.price);
+
+      let html = '';
+      sortedLevels.forEach((lvl) => {
+        const isPoc = Math.abs(lvl.price - bar.poc_price) < 0.01;
+        const bidImbalance = lvl.bid_vol > lvl.ask_vol * 3 && lvl.bid_vol > 0.5;
+        const askImbalance = lvl.ask_vol > lvl.bid_vol * 3 && lvl.ask_vol > 0.5;
+
+        // 计算柱状背景占比
+        const maxLevelVol = Math.max(...bar.levels.map(l => l.total_vol)) || 1;
+        const volPercent = Math.min(100, Math.round((lvl.total_vol / maxLevelVol) * 100));
+
+        html += `
+          <div class="ladder-row ${isPoc ? 'is-poc' : ''}">
+            <div class="ladder-bid ${bidImbalance ? 'imbalance-high' : ''}">
+              ${fmtVol(lvl.bid_vol)}
+            </div>
+            <div class="ladder-price ${isPoc ? 'poc-star' : ''}">
+              ${isPoc ? '★ ' : ''}${fmtPrice(lvl.price)}
+            </div>
+            <div class="ladder-ask ${askImbalance ? 'imbalance-high' : ''}">
+              ${fmtVol(lvl.ask_vol)}
+            </div>
+            <div class="ladder-delta ${lvl.delta >= 0 ? 'text-green' : 'text-red'}">
+              ${fmtDelta(lvl.delta)}
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    // 计算移动平均
+    function calculateSMA(data, period = 20) {
+      const result = [];
+      for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+          result.push({ time: data[i].time, value: data[i].value });
+        } else {
+          let sum = 0;
+          for (let j = 0; j < period; j++) {
+            sum += data[i - j].value;
+          }
+          result.push({ time: data[i].time, value: sum / period });
+        }
+      }
+      return result;
+    }
+
+    // 加载初始快照数据
+    function loadSnapshot(history) {
+      barsData = history;
+      barMap.clear();
+
+      const candleList = [];
+      const pocList = [];
+      const volList = [];
+      const buyVolList = [];
+      const sellVolList = [];
+      const deltaList = [];
+      const cvdList = [];
+
+      barsData.forEach((bar) => {
+        barMap.set(bar.time, bar);
+
+        candleList.push({
+          time: bar.time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
+          close: bar.close,
+        });
+
+        pocList.push({
+          time: bar.time,
+          value: bar.poc_price,
+        });
+
+        volList.push({
+          time: bar.time,
+          value: bar.volume,
+          color: bar.close >= bar.open ? 'rgba(8, 153, 129, 0.65)' : 'rgba(242, 54, 69, 0.65)',
+        });
+
+        buyVolList.push({
+          time: bar.time,
+          value: bar.buy_volume,
+        });
+
+        sellVolList.push({
+          time: bar.time,
+          value: bar.sell_volume,
+        });
+
+        deltaList.push({
+          time: bar.time,
+          value: bar.delta,
+          color: bar.delta >= 0 ? '#089981' : '#f23645',
+        });
+
+        cvdList.push({
+          time: bar.time,
+          value: bar.cum_delta,
+        });
+      });
+
+      candleSeries.setData(candleList);
+      pocLineSeries.setData(pocList);
+
+      volSeries.setData(volList);
+      const volMaData = calculateSMA(volList.map(v => ({ time: v.time, value: v.value })), 14);
+      volMaSeries.setData(volMaData);
+
+      buyVolSeries.setData(buyVolList);
+      sellVolSeries.setData(sellVolList);
+
+      deltaHistogram.setData(deltaList);
+      cvdLineSeries.setData(cvdList);
+
+      // 显示最后一根
+      if (barsData.length > 0) {
+        const last = barsData[barsData.length - 1];
+        updateHeaderStats(last);
+        updateFloatingInfo(last);
+        renderFootprintLadder(last, true);
+      }
+
+      mainChart.timeScale().fitContent();
+    }
+
+    // 实时更新单根 Bar
+    function updateSingleBar(bar, isNew = false) {
+      barMap.set(bar.time, bar);
+      
+      if (isNew) {
+        barsData.push(bar);
+        if (barsData.length > 250) barsData.shift();
+      } else {
+        if (barsData.length > 0 && barsData[barsData.length - 1].time === bar.time) {
+          barsData[barsData.length - 1] = bar;
+        } else {
+          barsData.push(bar);
+        }
+      }
+
+      candleSeries.update({
+        time: bar.time,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.close,
+      });
+
+      pocLineSeries.update({
+        time: bar.time,
+        value: bar.poc_price,
+      });
+
+      volSeries.update({
+        time: bar.time,
+        value: bar.volume,
+        color: bar.close >= bar.open ? 'rgba(8, 153, 129, 0.65)' : 'rgba(242, 54, 69, 0.65)',
+      });
+
+      buyVolSeries.update({
+        time: bar.time,
+        value: bar.buy_volume,
+      });
+
+      sellVolSeries.update({
+        time: bar.time,
+        value: bar.sell_volume,
+      });
+
+      deltaHistogram.update({
+        time: bar.time,
+        value: bar.delta,
+        color: bar.delta >= 0 ? '#089981' : '#f23645',
+      });
+
+      cvdLineSeries.update({
+        time: bar.time,
+        value: bar.cum_delta,
+      });
+
+      updateHeaderStats(bar);
+      updateFloatingInfo(bar);
+      renderFootprintLadder(bar, true);
+    }
+
+    // 建立 WebSocket 实时通讯
+    function connectWS() {
+      const loc = window.location;
+      const wsProtocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${loc.host}/ws`;
+
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        document.getElementById('ws-status').textContent = '实时撮合中';
+        document.getElementById('ws-dot').style.backgroundColor = '#089981';
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'snapshot') {
+            loadSnapshot(msg.data.history);
+          } else if (msg.type === 'bar_update') {
+            updateSingleBar(msg.data.bar, false);
+          } else if (msg.type === 'bar_new') {
+            updateSingleBar(msg.data.bar, true);
+          }
+        } catch (e) {
+          console.error('WS JSON parse error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        document.getElementById('ws-status').textContent = '重连中...';
+        document.getElementById('ws-dot').style.backgroundColor = '#f23645';
+        setTimeout(connectWS, 2000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    // 按钮交互
+    document.getElementById('btn-scroll').addEventListener('click', () => {
+      mainChart.timeScale().fitContent();
+    });
+
+    // 页面初始化
+    window.onload = () => {
+      resizeCharts();
+      connectWS();
+    };
+  </script>
+</body>
+</html>
+
