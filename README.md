@@ -1,3 +1,7 @@
+<img width="2548" height="1263" alt="image" src="https://github.com/user-attachments/assets/4ae98ad7-072a-4a6b-9803-f7175c519756" />
+
+
+
 BTC Order Flow & Footprint Visualization Terminal (Rust + TradingView)
 
 1. Project Overview
